@@ -16,17 +16,26 @@ Files:
 - Next line: start node id
 - Next line: goal node id
 
-Example used here:
+Example (matches the included input.txt):
 
 ```text
-3
-S 1 2
-A 2 2
-G 4 5
-3
+6
+S 6 0
+A 6 0
+B 1 0
+C 2 0
+D 1 0
+G 0 0
+9
 S A 1
-A G 1
-S G 10
+S C 2
+S D 4
+A B 2
+B A 2
+B G 1
+C S 2
+C G 4
+D G 4
 S
 G
 ```
@@ -37,7 +46,7 @@ G
 - `g ← 0`
 - `h ← euclidean_distance(startnode, goalnode)`
 - `f ← g + h`
-- Create `startstate(startnode, g, f, parent=None)` and insert into `minQ`.
+- Create `start_state(startnode, g, f, parent=None)` and insert into `minQ`.
 - While `minQ` is not empty:
   - `currstate ← extract_min(minQ)` (smallest f)
   - If `currstate.node` is the goal: print solution path and cost; return.
@@ -50,13 +59,13 @@ G
 ## Detailed flow with two practical helpers
 
 - `best_g`: dict node -> lowest g found so far; skip pushing worse paths.
-- `closed`: set of nodes already expanded with finalized best g (safe if heuristic is consistent).
+- `visited`: set of nodes already expanded; with a consistent heuristic, once popped the node's g is final.
 
 Loop steps:
 
 1. Pop the state with the smallest `f` from the priority queue.
 2. If it’s the goal, reconstruct the path via `parent` links and return.
-3. Add this node to `closed`.
+3. Add this node to `visited`.
 4. For each neighbor, compute `tentative_g = current.g + cost`.
    - If `tentative_g` improves on `best_g[neighbor]`, update `best_g`, compute `h`, create a new State, push it.
 
@@ -67,9 +76,9 @@ Loop steps:
 - Cell 3: `class State` has `nid, g, h, f=g+h, parent`, plus:
   - `__lt__` so the priority queue can order states.
   - `path()` to rebuild the route from start to this state.
-- Cell 4: `astar(...)` uses `PriorityQueue`, `best_g`, `closed`. Prints:
-  - `Path: S A G`
-  - `Total cost: 2`
+- Cell 4: `astar(startnid, goalnid, adjlist, coords)` uses `PriorityQueue`, `best_g`, and a `visited` set to avoid re-expansion. With the provided input, it prints:
+  - `Path: S -> C -> G`
+  - `Total cost: 6`
 
 ## What the special pieces do
 
@@ -124,17 +133,40 @@ What if `h = 0` for all nodes?
 
 What if `h` overestimates (not admissible)?
 
-- A\* may return a suboptimal path. With the current no-reopen policy, you can finalize a node too early.
+- A\* may return a suboptimal path. With a simple closed set and no reopen policy, you can finalize a node too early. Using a consistent heuristic (like straight-line distance when edge costs are Euclidean) avoids this.
 
-## Why `best_g` and `closed`?
+## Why `best_g` and `visited`?
 
 - `best_g`: prevents pushing worse duplicate paths—saves time/memory.
-- `closed`: avoids re-expanding nodes whose best `g` is final (assuming consistency)—saves time.
+- `visited`: avoids re-expanding nodes whose best `g` is final (assuming consistency)—saves time.
 
 What if we omit them?
 
 - No `best_g`: many duplicates in the queue; still correct with admissible `h`, but slower.
-- No `closed`: nodes can be expanded multiple times; slower. With inconsistent `h`, you might need to “reopen” nodes when a better `g` is found later.
+- No `visited`: nodes can be expanded multiple times; slower. With inconsistent `h`, you might need to “reopen” nodes when a better `g` is found later.
+
+### Why not use `g < best_g.get(neighbor_id)`?
+
+- `best_g.get(neighbor_id)` returns `None` when the neighbor hasn’t been seen yet.
+- Comparing an `int` to `None` (i.e., `g < None`) raises a `TypeError` in Python 3.
+- Using a default like `float('inf')` encodes “no best cost yet,” so any finite `g` will be considered better and the check works.
+
+Safe patterns:
+
+```python
+# 1) Use a default
+if g < best_g.get(neighbor_id, float('inf')):
+  ...
+
+# 2) Split the logic
+if neighbor_id not in best_g or g < best_g[neighbor_id]:
+  ...
+
+# 3) Assign then compare
+curr = best_g.get(neighbor_id, math.inf)
+if g < curr:
+  ...
+```
 
 ## Directed vs. undirected edges
 
@@ -170,7 +202,7 @@ Total cost: N/A (goal not reachable)
 - `h(n)`: heuristic estimate from n to goal.
 - `f(n) = g(n) + h(n)`: estimated total cost via n.
 - `open` (priority queue): frontier of discovered states.
-- `closed`: set of nodes already expanded.
+- `visited`: set of nodes already expanded.
 - `best_g`: map of best-known g per node.
 
 This guide matches the notebook behavior and covers the “why” behind each choice, plus what changes would do if you implemented them differently.
